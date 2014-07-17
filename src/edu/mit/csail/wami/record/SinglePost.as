@@ -54,19 +54,24 @@ package edu.mit.csail.wami.record
 		private var buffer:ByteArray = new ByteArray();
 		private var timeoutMillis:int;
 		
-		public function SinglePost(url:String, buffer:ByteArray, type:String, timeoutMillis:int, listener:StateListener)
+		public function SinglePost(url:String, type:String, timeoutMillis:int, listener:StateListener)
 		{
 			this.url = url;
-      this.buffer = buffer;
 			this.contentType = type;
 			this.listener = listener;
 			this.timeoutMillis = timeoutMillis;
 		}
 		
-		public function doPost():void {
+		override public function write(bytes:ByteArray):void
+		{
+			bytes.readBytes(buffer, buffer.length, bytes.bytesAvailable);
+		}
+		
+		override public function close():void 
+		{
 			buffer.position = 0;
 			External.debug("POST " + buffer.length + " bytes of type " + contentType);
-
+			buffer.position = 0;
 			var loader:URLLoader = new URLLoader();
 			
 			loader.addEventListener(Event.COMPLETE, completeHandler);
@@ -79,12 +84,7 @@ package edu.mit.csail.wami.record
 			var request:URLRequest = new URLRequest(url);
 			request.method = URLRequestMethod.POST;
 			request.contentType = contentType;
-
-      var inner:Object   = {audio:buffer, audio_length:buffer.length}
-      var comment:Object = {comment:comment}
-
-			request.data = comment;
-
+			request.data = buffer;
 			if (buffer.bytesAvailable == 0) {
 				External.debug("Note that flash does a GET request if bytes.length == 0");
 			}
@@ -97,6 +97,8 @@ package edu.mit.csail.wami.record
 					listener.failed(error);
 				}
 			}
+			
+			super.close();
 		}
 		
 		private function completeHandler(event:Event):void {
@@ -154,5 +156,4 @@ package edu.mit.csail.wami.record
 			finished = true;
 		}
 	}		
-			External.debug("Size is " + blah.inner);
 }

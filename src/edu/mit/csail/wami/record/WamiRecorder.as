@@ -44,16 +44,14 @@ package edu.mit.csail.wami.record
 	import flash.utils.Endian;
 	import flash.utils.clearInterval;
 	import flash.utils.setInterval;
-  import flash.utils.ByteArray;
-
+	
 	public class WamiRecorder implements IRecorder
 	{
-		public  var audioPipe:EncodePipe;
-
-    private var recording:ByteArray = null;
 		private static var CHUNK_DURATION_MILLIS:Number = 200;
+		
 		private var mic:Microphone = null;
 		private var params:WamiParams;
+		private var audioPipe:Pipe;
 
 		// For adding some audio padding to start and stop.
 		private var circularBuffer:BytePipe;
@@ -110,7 +108,6 @@ package edu.mit.csail.wami.record
 		}
 		
 		protected function onMicStatus(event:StatusEvent):void
-
 		{
 			External.debug("status: " + event.code);
 			if (event.code == "Microphone.Unmuted") 
@@ -119,7 +116,6 @@ package edu.mit.csail.wami.record
 			} else if (event.code == "Microphone.Muted") {
 				unlisten();
 			}
-
 		}
 		
 		public function start(url:String, listener:StateListener):void 
@@ -148,26 +144,35 @@ package edu.mit.csail.wami.record
 			startTime = new Date();
 		}
 		
-		public function createAudioPipe(url:String, listener:StateListener):EncodePipe
-
+		public function createAudioPipe(url:String, listener:StateListener):Pipe
 		{
 			this.listener = listener;
-
+			
 			var post:Pipe;
 			var container:IAudioContainer;
-			post = new Sink();
-			container = new WaveContainer();
-
+			if (params.stream)
+			{
+				// The chunk parameter is something I made up.  It would need
+				// to be handled on the server-side to piece all the chunks together.
+				post = new MultiPost(url, "audio/basic; chunk=%s", 3*1000, listener);
+				params.format.endian = Endian.BIG_ENDIAN;
+				container = new AuContainer();
+			}
+			else
+			{
+				post = new SinglePost(url, "audio/x-wav", 30*1000, listener);
+				container = new WaveContainer();
+			}
+			
 			// Setup the audio pipes.  A transcoding pipe converts floats
 			// to shorts and passes them on to a chunking pipe, which spits
 			// out chunks to a pipe that possibly adds a WAVE header
 			// before passing the chunks on to a pipe that does HTTP posts.
-			var pipe:EncodePipe = new EncodePipe(params.format, container);
-
-			pipe.setSink(new ChunkPipe(getChunkSize())).setSink(post);
+			var pipe:Pipe = new EncodePipe(params.format, container);
+			pipe.setSink(new ChunkPipe(getChunkSize()))
+				.setSink(post);
 
 			return pipe;
-
 		}
 		
 		internal function sampleHandler(evt:SampleDataEvent):void
@@ -225,7 +230,7 @@ package edu.mit.csail.wami.record
 			} catch(error:Error) {
 				listener.failed(error);
 			}
-		  recording = audioPipe.getRecording();	
+			
 			audioPipe = null;
 			validateAudioLength();
 			
@@ -233,20 +238,16 @@ package edu.mit.csail.wami.record
 				// No need if we're not padding the audio
 				unlisten();
 			}
-      listener.finished();
 		}
 		
 		private function validateAudioLength():void
-
 		{
-
 			stopTime = new Date();
 			var seconds:Number = ((stopTime.time - startTime.time + paddingMillis) / 1000.0);
 			var expectedSamples:uint = uint(seconds*params.format.rate);
 			External.debug("Expected Samples: " + expectedSamples + " Actual Samples: " + handled);
 			startTime = null;
 			stopTime = null;
-
 		}
 		
 		private function getBytesPerSecond():uint 
@@ -263,9 +264,6 @@ package edu.mit.csail.wami.record
 		{
 			return uint(getBytesPerSecond()*params.paddingMillis/1000.0);
 		}
-
-	  public function getRecording():ByteArray {
-      return recording;
-    }	
+		
 	}
 }
